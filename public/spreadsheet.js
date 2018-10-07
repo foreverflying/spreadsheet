@@ -34,7 +34,7 @@ function getGridValue(x, y) {
 function setGridValue(x, y, val) {
     var key = "v" + x + "_" + y
     var data = sheetData[key]
-    if (data && val !== "") {
+    if (data) {
         data.value = val
     } else {
         sheetData[key] = { value: val }
@@ -51,6 +51,30 @@ function getRowNumberGridByY(y) {
 
 function getColumnGridByX(x) {
     return $("#c" + x)
+}
+
+function translateGridNameToKey(name) {
+    var patt = /[A-Z]+[0-9]+/
+    if (!patt.test(name)) {
+        return ""
+    }
+    var x = 0, y = 0
+    for (var char in name) {
+        var n = char.charCodeAt(0)
+        if (n > 65) {
+            x = x * 26 + n
+        } else {
+            y = y * 10 + n
+        }
+    }
+    return "v" + (x + 1) + "_" + (y + 1)
+}
+
+function parseFomulas(val) {
+    if (val[0] !== "=") {
+        return null;
+    }
+    // TODO:
 }
 
 function commitEdit() {
