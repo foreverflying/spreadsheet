@@ -4,11 +4,13 @@
 }
 
 #gridName {
-    width: 100px;
+    width: 80px;
+    text-align: center;
 }
 
 #gridValue {
     width: 600px;
+    text-align: left;
 }
 
 #sheetBody {
@@ -33,24 +35,19 @@
     width: 42px;
 }
 
-#sheetHeader {
-    z-index: -1;
-    float: top;
-    white-space: nowrap;
-    height: 22px;
-}
-
-#sheetContent {
-    position: relative;
-    overflow: auto;
-}
-
 #rowNumber >div {
     width: 40px;
     height: 20px;
     text-align: center;
     margin-top: -1px;
     border: 1px solid black;
+}
+
+#sheetHeader {
+    z-index: -1;
+    float: top;
+    white-space: nowrap;
+    height: 22px;
 }
 
 #sheetHeader >div {
@@ -63,6 +60,12 @@
     background-color: grey;
 }
 
+#sheetContent {
+    z-index: 0;
+    position: relative;
+    overflow: auto;
+}
+
 .gridRow {
     white-space: nowrap;
     height: 21px;
@@ -71,9 +74,15 @@
 .gridRow >div {
     width: 80px;
     height: 20px;
+    vertical-align: bottom;
+    line-height: 20px;
     text-align: right;
     margin-top: -1px;
     margin-left: -1px;
     border: 1px solid black;
     display: inline-block;
+}
+
+.gridFocus {
+    background-color: silver !important;
 }
