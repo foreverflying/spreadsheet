@@ -14,11 +14,11 @@ function __f_SUM(...args) {
     return args.reduce((s, n) => s + n)
 }
 
-function _f_MIN(...args) {
+function __f_MIN(...args) {
     return Math.min(...args)
 }
 
-function _f_MAX(...args) {
+function __f_MAX(...args) {
     return Math.max(...args)
 }
 
