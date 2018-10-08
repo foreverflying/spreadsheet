@@ -72,15 +72,16 @@
 }
 
 .gridRow >div {
-    width: 80px;
+    width: 76px;
     height: 20px;
+    padding-right: 4px;
     vertical-align: bottom;
-    line-height: 20px;
     text-align: right;
     margin-top: -1px;
     margin-left: -1px;
     border: 1px solid black;
     display: inline-block;
+    overflow: hidden;
 }
 
 .gridFocus {
