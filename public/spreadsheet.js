@@ -101,7 +101,7 @@ function updateGridValue(x, y, val, bold, italics, underline) {
     }
     if (val[0] === "=") {
         data.formulaStr = val.toUpperCase()
-        computeFormulaGridValue(key)
+        computeFormulaGridValue(key, data)
     } else {
         data.value = val
     }
@@ -124,10 +124,11 @@ function notifyGridDataUpdated(data) {
         return
     }
     for (var key of data.listenerMap.keys()) {
-        var val = computeFormulaGridValue(key)
+        var data = getGridDataEnsure(key)
+        computeFormulaGridValue(key, data)
         var arr = key.split("_")
         var grid = getDomGridByPosition(arr[0], arr[1])
-        grid.html(val)
+        grid.html(getGridFormattedHtml(data))
     }
 }
 
@@ -232,8 +233,7 @@ function parseFormulaGrid(selfKey, data) {
     listenGridUpdateNotify(selfKey, data)
 }
 
-function computeFormulaGridValue(key) {
-    var data = getGridDataEnsure(key)
+function computeFormulaGridValue(key, data) {
     if (!data.formula) {
         parseFormulaGrid(key, data)
     }
