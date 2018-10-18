@@ -1,6 +1,6 @@
 
 var _sheetDataMap
-var _focusX, _focusY
+var _focusGridName
 var _rowCount, _columnCount
 var _gridName, _gridValue, _formatBold, _formatItalics, _formatUnderline, _errorInfo
 var _sideBar, _rowNumberBar, _sheetHeader, _sheetContent
@@ -36,24 +36,35 @@ function getColumnName(x) {
     }
 }
 
-function getGridName(x, y) {
+function getGridNameByPos(x, y) {
     return getColumnName(x) + y
 }
 
-function getGridKey(x, y) {
-    return x + "_" + y
+function getPosByGridName(name) {
+    var x = 0, y = 0
+    for (var i = 0; i < name.length; ++i) {
+        var n = name.charCodeAt(i)
+        if (n >= 65) {
+            n -= 65     // 65 is ASCII of 'A'
+            x = x * 26 + n + 1
+        } else {
+            n -= 48     // 48 is ASCII of '0'
+            y = y * 10 + n
+        }
+    }
+    return x < _columnCount && y < _rowCount ? [x, y] : null
 }
 
-function getGridData(x, y) {
-    var data = _sheetDataMap.get(getGridKey(x, y))
+function getGridData(name) {
+    var data = _sheetDataMap.get(name)
     return data ? data : {}
 }
 
-function getGridDataEnsure(key) {
-    var data = _sheetDataMap.get(key)
+function getGridDataEnsure(name) {
+    var data = _sheetDataMap.get(name)
     if (!data) {
         data = {}
-        _sheetDataMap.set(key, data)
+        _sheetDataMap.set(name, data)
     }
     return data
 }
@@ -66,28 +77,16 @@ function getSheetHeaderGridByX(x) {
     return $("#s" + x)
 }
 
-function getPositionByGridName(name) {
-    var x = 0, y = 0
-    for (var i = 0; i < name.length; ++i) {
-        var n = name.charCodeAt(i)
-        if (n >= 65) {
-            n -= 65     // 65 is ASCII of 'A'
-            x = x * 26 + n + 1
-        } else {
-            n -= 48     // 48 is ASCII of '0'
-            y = y * 10 + n
-        }
-    }
-    return x < _columnCount && y < _rowCount ? { x: x, y: y } : null
+function getDomGridByName(name) {
+    return $("#" + name)
 }
 
-function getDomGridByPosition(x, y) {
-    return _sheetContent.children().eq(y - 1).children().eq(x - 1)
+function getDomGridByPos(x, y) {
+    return $(_sheetContent[0].children[(y - 1) * _columnCount + x - 1])
 }
 
-function updateGridValue(x, y, val, bold, italics, underline) {
-    var key = getGridKey(x, y)
-    var data = getGridDataEnsure(key)
+function updateGridValue(name, val, bold, italics, underline) {
+    var data = getGridDataEnsure(name)
     data.bold = bold
     data.italics = italics
     data.underline = underline
@@ -95,13 +94,13 @@ function updateGridValue(x, y, val, bold, italics, underline) {
         if (data.formulaStr === val) {
             return data
         }
-        clearFormulaGridData(key, data)
+        clearFormulaGridData(name, data)
     } else if (data.value === val) {
         return data
     }
     if (val[0] === "=") {
         data.formulaStr = val.toUpperCase()
-        computeFormulaGridValue(key, data)
+        computeFormulaGridValue(name, data)
     } else {
         data.value = val
     }
@@ -109,13 +108,13 @@ function updateGridValue(x, y, val, bold, italics, underline) {
     return data
 }
 
-function listenGridUpdateNotify(selfKey, selfData) {
-    for (var key of selfData.refGridKeyMap.keys()) {
-        var data = getGridDataEnsure(key)
+function listenGridUpdateNotify(selfName, selfData) {
+    for (var name of selfData.refGridKeyMap.keys()) {
+        var data = getGridDataEnsure(name)
         if (!data.listenerMap) {
             data.listenerMap = new Map()
         }
-        data.listenerMap.set(selfKey, true)
+        data.listenerMap.set(selfName, true)
     }
 }
 
@@ -123,23 +122,23 @@ function notifyGridDataUpdated(data) {
     if (!data.listenerMap) {
         return
     }
-    for (var key of data.listenerMap.keys()) {
-        var data = getGridDataEnsure(key)
-        computeFormulaGridValue(key, data)
-        var arr = key.split("_")
-        var grid = getDomGridByPosition(arr[0], arr[1])
-        grid.html(getGridFormattedHtml(data))
+    for (var name of data.listenerMap.keys()) {
+        var notifyData = getGridDataEnsure(name)
+        computeFormulaGridValue(name, notifyData)
+        var grid = getDomGridByName(name)
+        grid.html(getGridFormattedHtml(notifyData))
+        notifyGridDataUpdated(notifyData)
     }
 }
 
-function clearFormulaGridData(selfKey, selfData) {
+function clearFormulaGridData(selfName, selfData) {
     selfData.formulaStr = undefined
     selfData.formulaErr = undefined
     selfData.formula = undefined
     if (selfData.refGridKeyMap) {
-        for (var key of selfData.refGridKeyMap.keys()) {
-            var data = getGridDataEnsure(key)
-            data.listenerMap.delete(selfKey)
+        for (var name of selfData.refGridKeyMap.keys()) {
+            var data = getGridDataEnsure(name)
+            data.listenerMap.delete(selfName)
         }
     }
 }
@@ -156,25 +155,27 @@ function replaceFormulaColonPairs(formula) {
     const regexColonPair = /([A-Z]+[0-9]+) *: *([A-Z]+[0-9]+)/g
     regexColonPair.lastIndex = 0
     return formula.replace(regexColonPair, function(str, grid1, grid2) {
-        var p1 = getPositionByGridName(grid1)
-        var p2 = getPositionByGridName(grid2)
-        if (!p1 || !p2) {
-            throw "invalid grid name: " + !p1 ? grid1 : grid2
+        var [x1, y1] = getPosByGridName(grid1)
+        var [x2, y2] = getPosByGridName(grid2)
+        if (!x1 || !x2) {
+            throw "invalid grid name: " + !x1 ? grid1 : grid2
         }
-        var smallX = p1.x < p2.x ? p1.x : p2.x
-        var bigX = p1.x < p2.x ? p2.x : p1.x
-        var smallY = p1.y < p2.y ? p1.y : p2.y
-        var bigY = p1.y < p2.y ? p2.y : p1.y
+        if (x1 > x2) {
+            [x1, x2] = [x2, x1]
+        }
+        if (y1 > y2) {
+            [y1, y2] = [y2, y1]
+        }
         var arr = []
         while (true) {
-            var tmpY = smallY
+            var y = y1
             while (true) {
-                arr.push(getGridName(smallX, tmpY))
-                if (tmpY === bigY) break
-                tmpY++
+                arr.push(getGridNameByPos(x1, y))
+                if (y === y2) break
+                y++
             }
-            if (smallX === bigX) break
-            smallX++
+            if (x1 === x2) break
+            x1++
         }
         return arr.join()
     })
@@ -189,31 +190,28 @@ function replaceFormulaFunctionNames(formula) {
 function replaceFormulaGridNames(formula, refGridKeyMap) {
     const regexGridName = /[A-Z]+[0-9]+/g
     regexGridName.lastIndex = 0
-    return formula.replace(regexGridName, function(str) {
-        var p = getPositionByGridName(str)
-        if (!p) {
-            throw "invalid grid name: " + str
+    return formula.replace(regexGridName, function(name) {
+        if (!getPosByGridName(name)) {
+            throw "invalid grid name: " + name
         }
-        var key = getGridKey(p.x, p.y)
-        refGridKeyMap.set(key, true)
-        return "__getGridValue(\"" + key + "\")"
+        refGridKeyMap.set(name, true)
+        return "__getGridValue(\"" + name + "\")"
     })
 }
 
-function checkFormulaRef(selfKey, checkingKey, refGridKeyMap) {
-    for (var key of refGridKeyMap.keys()) {
-        if (key === selfKey) {
-            var arr = checkingKey.split("_")
-            throw "circular reference - " + getGridName(arr[0], arr[1]) + " already refered this grid"
+function checkFormulaRef(selfName, checkingName, refGridKeyMap) {
+    for (var name of refGridKeyMap.keys()) {
+        if (name === checkingName) {
+            throw "circular reference - " + selfName + " already refered this grid " + checkingName
         }
-        var data = getGridDataEnsure(key)
+        var data = getGridDataEnsure(name)
         if (data.refGridKeyMap) {
-            checkFormulaRef(selfKey, key, data.refGridKeyMap)
+            checkFormulaRef(name, checkingName, data.refGridKeyMap)
         }
     }
 }
 
-function parseFormulaGrid(selfKey, data) {
+function parseFormulaGrid(selfName, data) {
     var formula = data.formulaStr.substring(1)
     var refGridKeyMap = new Map()
     try {
@@ -221,7 +219,7 @@ function parseFormulaGrid(selfKey, data) {
         formula = replaceFormulaColonPairs(formula)
         formula = replaceFormulaFunctionNames(formula)
         formula = replaceFormulaGridNames(formula, refGridKeyMap)
-        checkFormulaRef(selfKey, selfKey, refGridKeyMap)
+        checkFormulaRef(selfName, selfName, refGridKeyMap)
     } catch (err) {
         data.formulaErr = err
         data.formula = "_"
@@ -230,12 +228,12 @@ function parseFormulaGrid(selfKey, data) {
     }
     data.formula = formula
     data.refGridKeyMap = refGridKeyMap
-    listenGridUpdateNotify(selfKey, data)
+    listenGridUpdateNotify(selfName, data)
 }
 
-function computeFormulaGridValue(key, data) {
+function computeFormulaGridValue(name, data) {
     if (!data.formula) {
-        parseFormulaGrid(key, data)
+        parseFormulaGrid(name, data)
     }
     if (!data.formulaErr) {
         try {
@@ -274,34 +272,31 @@ function commitGridEdit() {
     var bold = _formatBold.prop("checked")
     var italics = _formatItalics.prop("checked")
     var underline = _formatUnderline.prop("checked")
-    var data = updateGridValue(_focusX, _focusY, val, bold, italics, underline)
-    var grid = getDomGridByPosition(_focusX, _focusY)
+    var data = updateGridValue(_focusGridName, val, bold, italics, underline)
+    var grid = getDomGridByName(_focusGridName)
     grid.html(getGridFormattedHtml(data))
 }
 
 function addGridFocus(x, y) {
-    _focusX = x
-    _focusY = y
-    var focusGrid = getDomGridByPosition(_focusX, _focusY)
+    var focusGrid = getDomGridByPos(x, y)
     focusGrid.addClass("gridFocus")
-    var focusRowNumber = getRowNumberBarGridByY(_focusY)
+    var focusRowNumber = getRowNumberBarGridByY(y)
     focusRowNumber.addClass("gridFocus")
-    var focusColumn = getSheetHeaderGridByX(_focusX)
+    var focusColumn = getSheetHeaderGridByX(x)
     focusColumn.addClass("gridFocus")
 }
 
-function removeGridFocus() {
-    var focusColumn = getSheetHeaderGridByX(_focusX)
+function removeGridFocus(x, y) {
+    var focusColumn = getSheetHeaderGridByX(x)
     focusColumn.removeClass("gridFocus")
-    var focusRowNumber = getRowNumberBarGridByY(_focusY)
+    var focusRowNumber = getRowNumberBarGridByY(y)
     focusRowNumber.removeClass("gridFocus")
-    var focusGrid = getDomGridByPosition(_focusX, _focusY)
+    var focusGrid = getDomGridByPos(x, y)
     focusGrid.removeClass("gridFocus")
 }
 
-function setGridDisplay(x, y) {
-    var name = getGridName(x, y)
-    var data = getGridData(x, y)
+function setGridToDisplay(name) {
+    var data = getGridData(name)
     _gridName.val(name)
     _gridValue.val(data.formulaStr ? data.formulaStr : data.value)
     _gridValue.focus()
@@ -311,13 +306,31 @@ function setGridDisplay(x, y) {
     _errorInfo.html(data.formulaErr ? "Formula Error: " + data.formulaErr : "&nbsp;")
 }
 
-function switchFocusGrid(x, y) {
-    if (_focusX) {
-        removeGridFocus()
-        commitGridEdit()
+function switchFocusGrid(name, x, y) {
+    if (_focusGridName) {
+        commitGridEdit(_focusGridName)
+        var [oldX, oldY] = getPosByGridName(_focusGridName)
+        removeGridFocus(oldX, oldY)
     }
+    _focusGridName = name
     addGridFocus(x, y)
-    setGridDisplay(x, y)
+    setGridToDisplay(name)
+}
+
+function initGlobals(columnCount, rowCount, dataMap) {
+    _sheetDataMap = dataMap
+    _columnCount = columnCount
+    _rowCount = rowCount
+    _gridName = $("#gridName")
+    _gridValue = $("#gridValue")
+    _sideBar = $("#sideBar")
+    _rowNumberBar = $("#rowNumberBar")
+    _sheetHeader = $("#sheetHeader")
+    _sheetContent = $("#sheetContent")
+    _formatBold = $("#formatBold")
+    _formatItalics = $("#formatItalics")
+    _formatUnderline = $("#formatUnderline")
+    _errorInfo = $("#errorInfo")
 }
 
 function setSheetBodyHeight() {
@@ -347,24 +360,22 @@ function initSheetHeader() {
 }
 
 function initSheetContent() {
+    _sheetContent.css("grid-template-columns", "repeat(" + _columnCount + ", 1fr)")
     for (var y = 1; y <= _rowCount; ++y) {
-        var row = document.createElement("div")
-        row.className = "gridRow"
         for (var x = 1; x <= _columnCount; ++x) {
             var grid = document.createElement("div")
-            grid.xIndex = x
-            var data = getGridData(x, y)
+            grid.id = getGridNameByPos(x, y)
+            var data = getGridData(grid.id)
             grid.innerHTML = getGridFormattedHtml(data)
-            row.appendChild(grid)
+            _sheetContent.append(grid)
         }
-        row.yIndex = y
-        row.appendChild(grid)
-        _sheetContent.append(row)
     }
 }
 
 function initFocusGrid() {
-    switchFocusGrid(1, 1)
+    var name = "A1"
+    var [x, y] = getPosByGridName(name)
+    switchFocusGrid(name, x, y)
 }
 
 function addSheetBodyResizeListener() {
@@ -398,18 +409,18 @@ function addSheetContentScrollListener() {
 }
 
 function addSheetContentClickListener() {
-    $(".gridRow >div").click(function() {
-        var grid = $(this)
-        var x = grid[0].xIndex
-        var y = grid.parent()[0].yIndex
+    $("#sheetContent >div").click(function() {
+        var grid = $(this)[0]
+        var name = grid.id
+        var [x, y] = getPosByGridName(name)
         commitGridEdit()
-        switchFocusGrid(x, y)
+        switchFocusGrid(name, x, y)
     })
 }
 
 function addInputListener() {
     _gridValue.keydown(function(event) {
-        var x = _focusX, y = _focusY
+        var [x, y] = getPosByGridName(_focusGridName)
         switch (event.keyCode) {
         case 37:    // left
             x = x === 1 ? x : x - 1
@@ -427,11 +438,12 @@ function addInputListener() {
         default:
             return
         }
-        switchFocusGrid(x, y)
+        var name = getGridNameByPos(x, y)
+        switchFocusGrid(name, x, y)
     })
     var commit = function(event) {
         commitGridEdit()
-        setGridDisplay(_focusX, _focusY)
+        setGridToDisplay(_focusGridName)
     }
     _gridValue.blur(commit)
     _formatBold.change(commit)
@@ -450,20 +462,7 @@ function addRefreshButtonClickListener() {
 }
 
 function initSheetBody(columnCount, rowCount, dataMap) {
-    _sheetDataMap = dataMap
-    _columnCount = columnCount
-    _rowCount = rowCount
-    _gridName = $("#gridName")
-    _gridValue = $("#gridValue")
-    _sideBar = $("#sideBar")
-    _rowNumberBar = $("#rowNumberBar")
-    _sheetHeader = $("#sheetHeader")
-    _sheetContent = $("#sheetContent")
-    _formatBold = $("#formatBold")
-    _formatItalics = $("#formatItalics")
-    _formatUnderline = $("#formatUnderline")
-    _errorInfo = $("#errorInfo")
-
+    initGlobals(columnCount, rowCount, dataMap)
     setSheetBodyHeight()
     initRowNumberBar()
     initSheetHeader()
