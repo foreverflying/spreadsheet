@@ -50,9 +50,12 @@ function getPosByGridName(name) {
         } else {
             n -= 48     // 48 is ASCII of '0'
             y = y * 10 + n
+            if (y === 0) {
+                return null
+            }
         }
     }
-    return x < _columnCount && y < _rowCount ? [x, y] : null
+    return x <= _columnCount && y <= _rowCount ? [x, y] : null
 }
 
 function getGridData(name) {
@@ -143,16 +146,18 @@ function clearFormulaGridData(selfName, selfData) {
     }
 }
 
+const regexLegal = /^[ A-Z0-9\(\)\+\-\*\/%\^:,\.]+$/
+
 function checkFormula(formula) {
-    const regexLegal = /^[ A-Z0-9\(\)\+\-\*\/%\^:,\.]+$/
     if (!formula || !regexLegal.test(formula)) {
         throw "illegal formular"
     }
     return formula
 }
 
+const regexColonPair = /([A-Z]+[0-9]+) *: *([A-Z]+[0-9]+)/g
+
 function replaceFormulaColonPairs(formula) {
-    const regexColonPair = /([A-Z]+[0-9]+) *: *([A-Z]+[0-9]+)/g
     regexColonPair.lastIndex = 0
     return formula.replace(regexColonPair, function(str, grid1, grid2) {
         var [x1, y1] = getPosByGridName(grid1)
@@ -181,14 +186,16 @@ function replaceFormulaColonPairs(formula) {
     })
 }
 
+const regexFunctionName = /[A-Z][A-Z0-9_]+ *\(/g
+
 function replaceFormulaFunctionNames(formula) {
-    const regexFunctionName = /[A-Z][A-Z0-9_]+ *\(/g
     regexFunctionName.lastIndex = 0
     return formula.replace(regexFunctionName, "__f_$&")
 }
 
+const regexGridName = /[A-Z]+[0-9]+/g
+
 function replaceFormulaGridNames(formula, refGridKeyMap) {
-    const regexGridName = /[A-Z]+[0-9]+/g
     regexGridName.lastIndex = 0
     return formula.replace(regexGridName, function(name) {
         if (!getPosByGridName(name)) {
