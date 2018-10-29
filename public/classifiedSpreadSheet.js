@@ -13,18 +13,18 @@ class NormalGridValue {
     }
 
     get strError() {
-        return ""
+        return "&nbsp;"
     }
 
     get value() {
         return 0
     }
 
-    onOtherGridValueChange(spreadSheet, gridName) {
+    onOtherGridValueChange(spreadSheet, selfName) {
 
     }
 
-    discard(spreadSheet, gridName) {
+    discard(spreadSheet, selfName) {
 
     }
 }
@@ -35,42 +35,150 @@ class NumberGridValue extends NormalGridValue {
     }
 }
 
+let __spreadSheet = null
+
+function __getGridValue(name) {
+    return __spreadSheet.getGridData(name).value
+}
+
+function __f_SUM(...args) {
+    return args.reduce((s, n) => s + n)
+}
+
+function __f_MIN(...args) {
+    return Math.min(...args)
+}
+
+function __f_MAX(...args) {
+    return Math.max(...args)
+}
+
+const regexLegal = /^[ A-Z0-9\(\)\+\-\*\/%\^:,\.]+$/
+const regexColonPair = /([A-Z]+[0-9]+) *: *([A-Z]+[0-9]+)/g
+const regexFunctionName = /[A-Z][A-Z0-9_]+ *\(/g
+const regexGridName = /[A-Z]+[0-9]+/g
+
 class FormularGridValue extends NormalGridValue {
-    constructor(strRaw) {
+    constructor(spreadSheet, selfName, strRaw) {
         super(strRaw.toUpperCase())
+        this._computeFormulaGridValue(spreadSheet, selfName)
     }
 
     get strDisplay() {
-        return this._strRaw
+        var color = this._formulaError ? "red" : "dodgerblue"
+        return "<span style='color:" + color + ";'>" + this._value + "</span>"
     }
 
     get strError() {
-        return ""
+        return this._formulaError ? this._formulaError : "&nbsp;"
     }
 
     get value() {
-        return 0
+        return isNaN(this._value) ? 0 : this._value
     }
 
-    onOtherGridValueChange(spreadSheet, gridName) {
-
+    onOtherGridValueChange(spreadSheet, selfName) {
+        this._computeFormulaGridValue(spreadSheet, selfName)
     }
 
-    discard(spreadSheet, gridName) {
-        if (this._refGridNameMap) {
-            for (var name of this._refGridNameMap.keys()) {
-                var data = spreadSheet.getGridData(name)
-                data.unsubscribeValueChange(gridName)
+    discard(spreadSheet, selfName) {
+        let grid = spreadSheet.getGridData(selfName)
+        grid.unlistenReferedGridValueChange()
+    }
+
+    _checkFormula(formula) {
+        if (!formula || !regexLegal.test(formula)) {
+            throw "illegal formular"
+        }
+        return formula
+    }
+
+    _replaceFormulaColonPairs(spreadSheet, formula) {
+        regexColonPair.lastIndex = 0
+        return formula.replace(regexColonPair, function(str, grid1, grid2) {
+            let [x1, y1] = spreadSheet.getPosByGridName(grid1)
+            let [x2, y2] = spreadSheet.getPosByGridName(grid2)
+            if (!x1 || !x2) {
+                throw "invalid grid name: " + !x1 ? grid1 : grid2
+            }
+            if (x1 > x2) {
+                [x1, x2] = [x2, x1]
+            }
+            if (y1 > y2) {
+                [y1, y2] = [y2, y1]
+            }
+            let arr = []
+            while (true) {
+                let y = y1
+                while (true) {
+                    arr.push(spreadSheet.getGridNameByPos(x1, y))
+                    if (y === y2) break
+                    y++
+                }
+                if (x1 === x2) break
+                x1++
+            }
+            return arr.join()
+        })
+    }
+
+    _replaceFormulaFunctionNames(formula) {
+        regexFunctionName.lastIndex = 0
+        return formula.replace(regexFunctionName, "__f_$&")
+    }
+
+    _replaceFormulaGridNames(spreadSheet, formula, refGridNameMap) {
+        regexGridName.lastIndex = 0
+        return formula.replace(regexGridName, function(name) {
+            if (!spreadSheet.getPosByGridName(name)) {
+                throw "invalid grid name: " + name
+            }
+            refGridNameMap.set(name, true)
+            return "__getGridValue(\"" + name + "\")"
+        })
+    }
+
+    _parseFormulaGrid(spreadSheet, selfName) {
+        let formula = this._strRaw.substring(1)
+        let refGridNameMap = new Map()
+        let grid = spreadSheet.getGridData(selfName)
+        try {
+            formula = this._checkFormula(formula)
+            formula = this._replaceFormulaColonPairs(spreadSheet, formula)
+            formula = this._replaceFormulaFunctionNames(formula)
+            formula = this._replaceFormulaGridNames(spreadSheet, formula, refGridNameMap)
+            grid.checkReferedGrid(selfName, selfName, refGridNameMap)
+        } catch (err) {
+            this._formulaError = err
+            this._formula = "_"
+            this._value = "error"
+            return
+        }
+        this._formula = formula
+        grid.listenReferedGridValueChange(refGridNameMap)
+    }
+    
+    _computeFormulaGridValue(spreadSheet, name) {
+        if (!this._formula) {
+            this._parseFormulaGrid(spreadSheet, name)
+        }
+        if (!this._formulaError) {
+            try {
+                this._value = eval(this._formula)
+            } catch (err) {
+                this._formulaError = err //"run time error"
+                this._formula = "_"
+                this._value = "error"
             }
         }
     }
 }
 
 class GridValueFactory {
-    static createGridValue(strRaw) {
+    static createGridValue(spreadSheet, selfName, strRaw) {
         if (strRaw[0] === "=") {
-            return new FormularGridValue(strRaw)
-        } else if (isNaN(strRaw)) {
+            return new FormularGridValue(spreadSheet, selfName, strRaw)
+        } else if (strRaw === "" || isNaN(strRaw)) {
             return new NormalGridValue(strRaw)
         } else {
             return new NumberGridValue(strRaw)
@@ -79,12 +187,12 @@ class GridValueFactory {
 }
 
 class Grid {
-    constructor(spreadSheet, gridName) {
+    constructor(spreadSheet, selfName) {
         this._spreadSheet = spreadSheet
-        this._gridName = gridName
+        this._selfName = selfName
     }
 
-    update(strRaw, isBold, isItalics, isUnderline) {
+    updateData(strRaw, isBold, isItalics, isUnderline) {
         this._updateStrRaw(strRaw)
         this._isBold = isBold
         this._isItalics = isItalics
@@ -102,9 +210,50 @@ class Grid {
         this._listenerMap.delete(notifyGridName)
     }
 
+    listenReferedGridValueChange(refGridNameMap) {
+        if (this._refGridNameMap) {
+            this.unlistenReferedGridValueChange()
+        }
+        this._refGridNameMap = refGridNameMap
+        for (let name of this._refGridNameMap.keys()) {
+            let data = this._spreadSheet.getGridDataEnsure(name)
+            data.subscribeValueChange(this._selfName)
+        }
+    }
+
+    unlistenReferedGridValueChange() {
+        if (this._refGridNameMap) {
+            for (let name of this._refGridNameMap.keys()) {
+                let data = this._spreadSheet.getGridDataEnsure(name)
+                data.unsubscribeValueChange(this._selfName)
+            }
+            this._refGridNameMap = null
+        }
+    }
+
+    checkReferedGrid(selfName, checkingName, refGridNameMap) {
+        if (!refGridNameMap) {
+            refGridNameMap = this._refGridNameMap
+            if (!refGridNameMap) {
+                return
+            }
+        }
+        for (let name of refGridNameMap.keys()) {
+            if (name === checkingName) {
+                throw "circular reference - " + selfName + " already refered this grid " + checkingName
+            }
+            let data = this._spreadSheet.getGridDataEnsure(name)
+            data.checkReferedGrid(name, checkingName)
+        }
+    }
+
     onOtherGridValueChange(otherGridName) {
-        this._gridValue.onOtherGridValueChange(this._spreadSheet, this._gridName)
-        this._notifyGridValueChange()
+        let orginalValue = this._gridValue.value
+        this._gridValue.onOtherGridValueChange(this._spreadSheet, this._selfName)
+        let newValue = this._gridValue.value
+        if (orginalValue !== newValue) {
+            this._notifyGridValueChange()
+        }
     }
 
     get isBold() {
@@ -151,19 +300,24 @@ class Grid {
 
     _updateStrRaw(strRaw) {
         if (this._gridValue) {
-            this._gridValue.discard(this._spreadSheet, this._gridName)
+            if (this._gridValue.strRaw === strRaw) {
+                return
+            }
+            this._gridValue.discard(this._spreadSheet, this._selfName)
         }
-        this._gridValue = GridValueFactory.createGridValue(strRaw)
-        if (this._listenerMap) {
-            this._notifyGridValueChange()
-        }
+        this._gridValue = GridValueFactory.createGridValue(this._spreadSheet, this._selfName, strRaw)
+        this._notifyGridValueChange()
     }
 
     _notifyGridValueChange() {
-        for (var name of this._listenerMap.keys()) {
-            var notifyData = this._spreadSheet.getGridData(name)
-            notifyData.onOtherGridValueChange(this._gridName)
-            this._spreadSheet.onGridValueUpdate(name)
+        if (this._selfName) {
+            this._spreadSheet.onGridValueUpdate(this._selfName)
+        }
+        if (this._listenerMap) {
+            for (let name of this._listenerMap.keys()) {
+                let notifyData = this._spreadSheet.getGridData(name)
+                notifyData.onOtherGridValueChange(this._selfName)
+            }
         }
     }
 }
@@ -174,23 +328,15 @@ class SpreadSheet {
         this._rowCount = rowCount
         this._dataMap = dataMap
         this._onGridValueUpdate = function() {}
-        this._emptyGridData = new Grid()
-        this._emptyGridData.update("", false, false, false)
-    }
-
-    get columnCount() {
-        return this._columnCount
-    }
-    
-    get rowCount() {
-        return this._rowCount
+        this._emptyGridData = new Grid(this, "")
+        this._emptyGridData.updateData("", false, false, false)
     }
 
     getColumnName(x) {
-        var arr = []
+        let arr = []
         while(true) {
             x--
-            var n = x % 26
+            let n = x % 26
             arr.unshift(String.fromCharCode(65 + n))    // 65 is ASCII of 'A'
             x = x - n
             if (x === 0) {
@@ -201,13 +347,13 @@ class SpreadSheet {
     }
     
     getGridNameByPos(x, y) {
-        return getColumnName(x) + y
+        return this.getColumnName(x) + y
     }
     
     getPosByGridName(name) {
-        var x = 0, y = 0
-        for (var i = 0; i < name.length; ++i) {
-            var n = name.charCodeAt(i)
+        let x = 0, y = 0
+        for (let i = 0; i < name.length; ++i) {
+            let n = name.charCodeAt(i)
             if (n >= 65) {
                 n -= 65     // 65 is ASCII of 'A'
                 x = x * 26 + n + 1
@@ -231,16 +377,34 @@ class SpreadSheet {
     }
 
     getGridData(name) {
-        var data = this._dataMap.get(name)
+        let data = this._dataMap.get(name)
         return data ? data : this._emptyGridData
+    }
+
+    getGridDataEnsure(name) {
+        let data = this._dataMap.get(name)
+        if (!data) {
+            data = new Grid(this, name)
+            data.updateData("", false, false, false)
+            this._dataMap.set(name, data)
+        }
+        return data
+    }
+
+    updateGridData(name, strRaw, isBold, isItalics, isUnderline) {
+        let data = this.getGridDataEnsure(name)
+        data.updateData(strRaw, isBold, isItalics, isUnderline)
+        this._onGridValueUpdate(name)
     }
 }
 
 class SpreadSheetUI {
-    constructor(spreadSheet) {
+    constructor(spreadSheet, columnCount, rowCount) {
         this._spreadSheet = spreadSheet
-        this._spreadSheet.setGridValueUpdateHandler(this._onGridValueUpdate)
-        this._gridName = $("#gridName")
+        this._spreadSheet.setGridValueUpdateHandler(this._onGridValueUpdate.bind(this))
+        this._columnCount = columnCount
+        this._rowCount = rowCount
+        this._selfName = $("#gridName")
         this._gridValue = $("#gridValue")
         this._sideBar = $("#sideBar")
         this._rowNumberBar = $("#rowNumberBar")
@@ -266,16 +430,16 @@ class SpreadSheetUI {
     }
 
     _setSheetBodyHeight() {
-        var rect = this._sheetContent[0].getBoundingClientRect()
-        var pageHeight = $(window).height()
-        var height = pageHeight - 30 - rect.top
+        let rect = this._sheetContent[0].getBoundingClientRect()
+        let pageHeight = $(window).height()
+        let height = pageHeight - 30 - rect.top
         this._sheetContent.css("maxHeight", "" + height + "px")
         this._sideBar.css("height", "" + (height + 21) + "px")
     }
     
     _initRowNumberBar() {
-        for (var i = 1; i <= this._rowCount; ++i) {
-            var grid = document.createElement("div")
+        for (let i = 1; i <= this._rowCount; ++i) {
+            let grid = document.createElement("div")
             grid.id = "r" + i
             grid.innerHTML = i
             this._rowNumberBar.append(grid)
@@ -283,8 +447,8 @@ class SpreadSheetUI {
     }
     
     _initSheetHeader() {
-        for (var i = 1; i <= this._columnCount; ++i) {
-            var grid = document.createElement("div")
+        for (let i = 1; i <= this._columnCount; ++i) {
+            let grid = document.createElement("div")
             grid.id = "s" + i
             grid.innerHTML = this._spreadSheet.getColumnName(i)
             this._sheetHeader.append(grid)
@@ -293,11 +457,11 @@ class SpreadSheetUI {
     
     _initSheetContent() {
         this._sheetContent.css("grid-template-columns", "repeat(" + this._columnCount + ", 1fr)")
-        for (var y = 1; y <= this._rowCount; ++y) {
-            for (var x = 1; x <= this._columnCount; ++x) {
-                var grid = document.createElement("div")
+        for (let y = 1; y <= this._rowCount; ++y) {
+            for (let x = 1; x <= this._columnCount; ++x) {
+                let grid = document.createElement("div")
                 grid.id = this._spreadSheet.getGridNameByPos(x, y)
-                var data = this._spreadSheet.getGridData(grid.id)
+                let data = this._spreadSheet.getGridData(grid.id)
                 grid.innerHTML = data.strFormated
                 this._sheetContent.append(grid)
             }
@@ -305,8 +469,8 @@ class SpreadSheetUI {
     }
     
     _initFocusGrid() {
-        var name = "A1"
-        var [x, y] = this._spreadSheet.getPosByGridName(name)
+        let name = "A1"
+        let [x, y] = this._spreadSheet.getPosByGridName(name)
         this._switchFocusGrid(name, x, y)
     }
     
@@ -317,42 +481,43 @@ class SpreadSheetUI {
     }
     
     _addSheetContentScrollListener() {
-        var scrollTop = this._sheetContent.scrollTop()
-        var scrollLeft = this._sheetContent.scrollLeft()
-    
+        let scrollTop = this._sheetContent.scrollTop()
+        let scrollLeft = this._sheetContent.scrollLeft()
+        let that = this
         this._sheetContent.scroll(function onSheetScroll(event) {
-            var curScrollTop = this._sheetContent.scrollTop()
-            var curScrollLeft = this._sheetContent.scrollLeft()
-            var diffTop = curScrollTop - scrollTop
-            var diffLeft = curScrollLeft - scrollLeft
+            let curScrollTop = that._sheetContent.scrollTop()
+            let curScrollLeft = that._sheetContent.scrollLeft()
+            let diffTop = curScrollTop - scrollTop
+            let diffLeft = curScrollLeft - scrollLeft
             scrollTop = curScrollTop
             scrollLeft = curScrollLeft
             if (diffLeft !== 0) {
-                var offsetLeft = this._sheetHeader.offset()
+                let offsetLeft = that._sheetHeader.offset()
                 offsetLeft.left -= diffLeft
-                this._sheetHeader.offset(offsetLeft)
+                that._sheetHeader.offset(offsetLeft)
             }
             if (diffTop !== 0) {
-                var offsetTop = this._rowNumberBar.offset()
+                let offsetTop = that._rowNumberBar.offset()
                 offsetTop.top -= diffTop
-                this._rowNumberBar.offset(offsetTop)
+                that._rowNumberBar.offset(offsetTop)
             }
         })
     }
     
     _addSheetContentClickListener() {
+        let that = this
         $("#sheetContent >div").click(function() {
-            var grid = $(this)[0]
-            var name = grid.id
-            var [x, y] = this._spreadSheet.getPosByGridName(name)
-            this._commitGridEdit()
-            this._switchFocusGrid(name, x, y)
+            let grid = $(this)[0]
+            let name = grid.id
+            let [x, y] = that._spreadSheet.getPosByGridName(name)
+            that._switchFocusGrid(name, x, y)
         })
     }
     
     _addInputListener() {
+        let that = this
         this._gridValue.keydown(function(event) {
-            var [x, y] = this._spreadSheet.getPosByGridName(this._focusGridName)
+            let [x, y] = that._spreadSheet.getPosByGridName(that._focusGridName)
             switch (event.keyCode) {
             case 37:    // left
                 x = x === 1 ? x : x - 1
@@ -370,12 +535,12 @@ class SpreadSheetUI {
             default:
                 return
             }
-            var name = this._spreadSheet.getGridNameByPos(x, y)
-            this._switchFocusGrid(name, x, y)
+            let name = that._spreadSheet.getGridNameByPos(x, y)
+            that._switchFocusGrid(name, x, y)
         })
-        var onCommit = function(event) {
-            this._commitGridEdit()
-            this._setGridToDisplay(_focusGridName)
+        let onCommit = function(event) {
+            that._commitGridEdit()
+            that._setGridToDisplay(that._focusGridName)
         }
         this._gridValue.blur(onCommit)
         this._formatBold.change(onCommit)
@@ -384,12 +549,13 @@ class SpreadSheetUI {
     }
     
     _addRefreshButtonClickListener() {
+        let that = this
         $("#refreshButton").click(function(event) {
-            this._rowNumberBar.empty()
-            this._sheetHeader.empty()
-            this._sheetContent.empty()
+            that._rowNumberBar.empty()
+            that._sheetHeader.empty()
+            that._sheetContent.empty()
             alert("Sheet already destroyed, click OK to rebuild.")
-            this._init()
+            that._init()
         })
     }
 
@@ -406,40 +572,39 @@ class SpreadSheetUI {
     }
     
     _getDomGridByPos(x, y) {
-        return $(this._sheetContent[0].children[(y - 1) * this._spreadSheet.columnCount + x - 1])
+        return $(this._sheetContent[0].children[(y - 1) * this._columnCount + x - 1])
     }
         
     _commitGridEdit() {
-        var val = this._gridValue.val()
-        var bold = this._formatBold.prop("checked")
-        var italics = this._formatItalics.prop("checked")
-        var underline = this._formatUnderline.prop("checked")
-        var data = this._spreadSheet.getGridDataEnsure(this._focusGridName)
-        data.update(val, bold, italics, underline)
+        let val = this._gridValue.val()
+        let bold = this._formatBold.prop("checked")
+        let italics = this._formatItalics.prop("checked")
+        let underline = this._formatUnderline.prop("checked")
+        this._spreadSheet.updateGridData(this._focusGridName, val, bold, italics, underline)
     }
     
     _addGridFocus(x, y) {
-        var focusGrid = this._getDomGridByPos(x, y)
+        let focusGrid = this._getDomGridByPos(x, y)
         focusGrid.addClass("gridFocus")
-        var focusRowNumber = this._getRowNumberBarGridByY(y)
+        let focusRowNumber = this._getRowNumberBarGridByY(y)
         focusRowNumber.addClass("gridFocus")
-        var focusColumn = this._getSheetHeaderGridByX(x)
+        let focusColumn = this._getSheetHeaderGridByX(x)
         focusColumn.addClass("gridFocus")
     }
     
     _removeGridFocus(x, y) {
-        var focusColumn = _getSheetHeaderGridByX(x)
+        let focusColumn = this._getSheetHeaderGridByX(x)
         focusColumn.removeClass("gridFocus")
-        var focusRowNumber = _getRowNumberBarGridByY(y)
+        let focusRowNumber = this._getRowNumberBarGridByY(y)
         focusRowNumber.removeClass("gridFocus")
-        var focusGrid = _getDomGridByPos(x, y)
+        let focusGrid = this._getDomGridByPos(x, y)
         focusGrid.removeClass("gridFocus")
     }
     
     _setGridToDisplay(name) {
-        var data = this._spreadSheet.getGridData(name)
-        this._gridName.val(name)
-        this._gridValue.val(data.strFormated)
+        let data = this._spreadSheet.getGridData(name)
+        this._selfName.val(name)
+        this._gridValue.val(data.strRaw)
         this._gridValue.focus()
         this._formatBold.prop("checked", data.isBold)
         this._formatItalics.prop("checked", data.isItalics)
@@ -448,15 +613,15 @@ class SpreadSheetUI {
     }
 
     _onGridValueUpdate(name) {
-        var grid = this._getDomGridByName(name)
-        var data = this._spreadSheet.getGridData(name)
+        let grid = this._getDomGridByName(name)
+        let data = this._spreadSheet.getGridData(name)
         grid.html(data.strFormated)
     }
     
     _switchFocusGrid(name, x, y) {
         if (this._focusGridName) {
-            this._commitGridEdit(this._focusGridName)
-            var [oldX, oldY] = this._spreadSheet.getPosByGridName(this._focusGridName)
+            this._commitGridEdit()
+            let [oldX, oldY] = this._spreadSheet.getPosByGridName(this._focusGridName)
             this._removeGridFocus(oldX, oldY)
         }
         this._focusGridName = name
@@ -465,18 +630,9 @@ class SpreadSheetUI {
     }
 }
 
-class Test {
-    constructor() {
-        this._a = 1;
-    }
-
-    get a() {
-        return this._a
-    }
-}
-
 function createSpreadSheet(columnCount, rowCount) {
     let spreadSheet = new SpreadSheet(columnCount, rowCount, new Map())
-    let spreadSheetUI = new SpreadSheetUI(spreadSheet)
+    __spreadSheet = spreadSheet
+    let spreadSheetUI = new SpreadSheetUI(spreadSheet, columnCount, rowCount)
     spreadSheetUI.init()
 }

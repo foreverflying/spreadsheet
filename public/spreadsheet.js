@@ -315,7 +315,7 @@ function setGridToDisplay(name) {
 
 function switchFocusGrid(name, x, y) {
     if (_focusGridName) {
-        commitGridEdit(_focusGridName)
+        commitGridEdit()
         var [oldX, oldY] = getPosByGridName(_focusGridName)
         removeGridFocus(oldX, oldY)
     }
@@ -420,7 +420,6 @@ function addSheetContentClickListener() {
         var grid = $(this)[0]
         var name = grid.id
         var [x, y] = getPosByGridName(name)
-        commitGridEdit()
         switchFocusGrid(name, x, y)
     })
 }
