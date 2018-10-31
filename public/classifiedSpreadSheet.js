@@ -555,7 +555,7 @@ class SpreadSheetUI {
             that._sheetHeader.empty()
             that._sheetContent.empty()
             alert("Sheet already destroyed, click OK to rebuild.")
-            that._init()
+            that.init()
         })
     }
 
