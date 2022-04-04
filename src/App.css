@@ -1,32 +1,129 @@
-.App {
-  text-align: center;
+html,
+body,
+#root,
+#App {
+    height: 100%;
+    margin: 0px;
 }
 
-.App-logo {
-  animation: App-logo-spin infinite 20s linear;
-  height: 40vmin;
+#SheetToolbar {
+    margin: 0.5em;
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+#SheetToolbar>* {
+    margin: 0 0.2em 0 0.2em;
 }
 
-.App-link {
-  color: #61dafb;
+#GridName {
+    width: 80px;
+    text-align: center;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+#GridValue {
+    width: 600px;
+    text-align: left;
+}
+
+#SheetBody {
+    max-height: 100%;
+    margin: 0.5em;
+}
+
+#RowNumberBar {
+    background-color: grey;
+}
+
+#RowNumberBar>div {
+    width: 40px;
+    height: 20px;
+    text-align: center;
+    border: 1px solid black;
+}
+
+#SheetHeader {
+    background-color: grey;
+}
+
+#SheetHeader>div {
+    width: 80px;
+    height: 20px;
+    text-align: center;
+    border: 1px solid black;
+}
+
+#SheetContent {
+    overflow: auto;
+    z-index: 0;
+}
+
+#SheetContent>div>div>div {
+    width: 80px;
+    height: 20px;
+    text-align: right;
+    border: 1px solid black;
+    overflow: hidden;
+}
+
+#ErrorMessage {
+    margin: 0 0 0.2em 0.5em;
+    padding-left: 0.2em;
+    height: 20px;
+    color: red;
+}
+
+.corner {
+    width: 40px;
+    height: 20px;
+    border: 1px solid black;
+    background-color: grey;
+    z-index: 1;
+}
+
+.flexRow {
+    display: flex;
+}
+
+.flexRow>* {
+    flex-shrink: 0;
+}
+
+.fitFlexRowToParent>:last-child {
+    flex-basis: 0px;
+    flex-grow: 1;
+    overflow-x: hidden;
+}
+
+.flexColumn {
+    display: flex;
+    flex-direction: column;
+}
+
+.flexColumn>* {
+    flex-shrink: 0;
+}
+
+.fitFlexColumnToParent>:last-child {
+    flex-basis: 0px;
+    flex-grow: 1;
+    overflow-y: hidden;
+}
+
+.childrenShiftUp>div:not(:first-child) {
+    margin-top: -1px;
+}
+
+.childrenShiftLeft>div:not(:first-child) {
+    margin-left: -1px;
+}
+
+.current {
+    background-color: silver !important;
+}
+
+.formula {
+    color: dodgerblue;
+}
+
+.error {
+    color: red;
 }

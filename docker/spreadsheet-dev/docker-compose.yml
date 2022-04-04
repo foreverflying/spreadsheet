@@ -1,0 +1,40 @@
+version: "3"
+services:
+  spreadsheet:
+    image: dev-node
+    build:
+      cache_from:
+        - dev-node
+      context: ../dev-node
+    environment:
+      - PROJECT_PATH=spreadsheet
+      - INIT_FILE=init.sh
+      - WAIT_SEC=2
+      - TZ=
+    volumes:
+      - type: bind
+        source: ${GIT_CONFIG_PATH:-~/.gitconfig}
+        target: /home/user/.gitconfig
+        read_only: true
+      - type: bind
+        source: ${SSH_PATH:-~/.ssh}
+        target: /home/user/.ssh
+        read_only: true
+      - type: bind
+        source: ${BASH_ALIASES_PATH:-../res/.bash_aliases}
+        target: /home/user/.bash_aliases
+        read_only: true
+      - type: bind
+        source: ${BASH_ALIASES_PATH:-../res/.bash_aliases}
+        target: /root/.bash_aliases
+        read_only: true
+      - home:/home/user:delegated
+      - ../..:/opt/workspace/spreadsheet
+    # ports:
+    #   - 9000:9000
+volumes:
+  #   data:
+  #     driver_opts:
+  #       type: tmpfs
+  #       device: tmpfs
+  home:
