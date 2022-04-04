@@ -1,0 +1,84 @@
+
+#toolbar {
+    white-space: nowrap;
+}
+
+#gridName {
+    width: 80px;
+    text-align: center;
+}
+
+#gridValue {
+    width: 600px;
+    text-align: left;
+}
+
+#sheetBody {
+    overflow: hidden;
+}
+
+#sideBar {
+    float: left;
+    overflow: hidden;
+}
+
+#corner {
+    background-color: grey;
+    border: 1px solid black;
+    width: 40px;
+    height: 20px;
+}
+
+#rowNumberBar {
+    z-index: -1;
+    background-color: grey;
+    width: 42px;
+}
+
+#rowNumberBar >div {
+    width: 40px;
+    height: 20px;
+    text-align: center;
+    margin-top: -1px;
+    border: 1px solid black;
+}
+
+#sheetHeader {
+    z-index: -1;
+    float: top;
+    white-space: nowrap;
+    height: 22px;
+}
+
+#sheetHeader >div {
+    width: 80px;
+    height: 20px;
+    text-align: center;
+    margin-left: -1px;
+    border: 1px solid black;
+    display: inline-block;
+    background-color: grey;
+}
+
+#sheetContent {
+    z-index: 0;
+    position: relative;
+    overflow: auto;
+    display: grid;
+}
+
+#sheetContent >div {
+    width: 76px;
+    height: 20px;
+    padding-right: 4px;
+    vertical-align: bottom;
+    text-align: right;
+    margin-top: -1px;
+    margin-left: -1px;
+    border: 1px solid black;
+    overflow: hidden;
+}
+
+.gridFocus {
+    background-color: silver !important;
+}
